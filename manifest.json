@@ -1,0 +1,24 @@
+{
+  "name": "ClassRadar - AJU B.Tech Class Portal",
+  "short_name": "ClassRadar",
+  "description": "ARKA JAIN University B.Tech 1st Sem Multi-Section Timetable & Smart Class Reminders",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#090d16",
+  "theme_color": "#2563eb",
+  "orientation": "portrait-primary",
+  "categories": [
+    "education",
+    "utilities",
+    "productivity"
+  ],
+  "icons": [
+    {
+      "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAYAAABS3GwHAAAFcElEQVR4nO3dL68cVRzH4XNJsVxISIpvUlFMRV1dBb4WR1Jd0ReA4AVUoElw2HpEXR3iGgwJHtEEWosohkmWZf/Mzp0558x8n0e2l53pvb/PnLO7s5er67sPPhQI9VHrE4CWBEA0ARBNAEQTANEEQDQBEE0ARBMA0QRANAEQTQBEEwDRBEA0ARBNAEQTANEEQLQ7rU9gqqcvb1qfAntevXjY+hQudrWWzwQb+PVZQxBdB2Dot6PXGLoMwOBvV28hdBWAwc/RSwjdvApk+LP08vNuvgJM/Ua8ef1u3hPh1h4/uZ7037VcDZoGcOnwG/r1uDSGVhE0C2Ds8Bv69RsbQ4sImgQwZvgN/rr99sPnZ7/mm5/+/t+f1Y6gegCGf7vGDP0xuzHUjKBqAOeG3+Cv020Gf98QQq0Iqr0Mavi3ac7hL6WUH7/+uJRS72XSKjfDGf7tGTP4n/383dG/+/Orb4/+3RBBKTeLrwRVtkCnAjD863Nq+E8N/TGnYvj0iy8vfrxLLB6A4d+WY8M/ZfD3HQthyQgWfQ5g+LdlyeE/9Th//fHrLI9/yGo/EEN7cw3+occ8tS2a02IrgKv/tsz9as+llloFqt8NavjX59DwL3H1P/f4S0SwSAC93OrKMpYe/prHqboCuPqvT+utz765V4FuPhDDOtS6+tc63uwB2P6wJtVWANuf9elt+zOYcxtkC8Rotbc/NY4rAKLNGsCx/b/tD72yAhBNAEQTANEEQDQBMFqtW5RrHlcAHHX/2dvWp3DQod8nNJUAiCYALlJ7G7T08QTASb1tg+bc/pQiACaotQrUOI4AOOvQKrD0cB56/Lmv/qUIgJFab4WWGP5S/FoUbmG4Ss95u3LtJ9lWAEY7tgrMNbTHHmepq38pVgAudP/Z24OfFLvNanAqoCWHvxQBMMGxCEr57zBP/e3Qu8eZ+j/eG0sATDJsh059bnjq1qjmE+74AHr94HdNtxm4U6tB7XOZIj4Abm/MajD2MWoTALPZHeIxMbR+b6EUAbCQHoZ7DO8DEE0ARBMA0QRANAEQTQBEEwDRBEA0ARAt/p3gtbxjyTKsAEQTANEEQDQBEE0ARIt/FeiX7z/5vdaxHj1/f2/s1/Z6XltjBSCaAIgmAKIJgGgCIJoAiCYAogmAaAIgmgCIJgCiCYBoAiCaAIgmAKIJgGgCIJoAiCYAogmAaAIgmgCIJgCiCYBoAiCaAIgmAKIJgGgCIJoAiCYAogmAaAIgmgCIJgCiCYBoAiCaAIgmAKIJgGgCIJoAiCYAogmAaAIgmgCIJgCiCYBoAiCaAIgmAKIJgGgCIJoAiCYAogmAaAIgmgCIJgCiCYBoAiDandYn0Nqj5+/vtT6HQ3o9r62xAhBt1gBevXh48M8fP7me8zCEODY3x+ZsCisA0QRAtGoB2AZxiVrzMnsAc+7PYN/c82ULRLSqAdgGMUbNOVkkANsglrDEXFXfAlkFOKX2fCwWwKlaRcAhp+ZiqV2FJ8FEWzQAqwBjtbj6l1JhBRAB57Qa/lI62AKJIFvrn3+VAM5V3PqbQBvnfu41Xk6vtgKIgF09DH8ppVxd333wocqR/vX05c3Zr3nz+t3yJ0ITYy50Nd9Irf4cYMw/zmqwTb0NfykNVoDBmJWgFKvBFoy9oLW4haZZAKWMj2AghvW4dBVvdf9Y0wBKuTyCgRj6M3Xr2vLmyeYBDKaGwHr1cNdw8zfCBj18M6inl593NyvALqvBdvUy+IMuAxgIYTt6G/xB1wHsEsP69Dr0u1YTwD5B9GcNA79vtQHAHLp5FQhaEADRBEA0ARBNAEQTANEEQDQBEE0ARBMA0QRANAEQTQBEEwDRBEA0ARBNAET7B0lbb2vuUmhKAAAAAElFTkSuQmCC",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
