@@ -1,4 +1,4 @@
-const CACHE_NAME = 'classradar-v2-clean';
+const CACHE_NAME = 'classradar-v3-clean';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting()));
