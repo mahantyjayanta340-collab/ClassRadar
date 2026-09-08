@@ -1756,11 +1756,26 @@
     }
 
     // Rebuild SECTIONS_DATA dynamically from flat CSV rows
+    // Rebuild SECTIONS_DATA dynamically from flat CSV rows
     function rebuildSectionsDataFromRows(rows) {
+      // Check if incoming sheet data for Section E is from the old Sep 2 routine
+      const hasOutdatedSecE = rows.some(r => 
+        r.Section === "SEC_E" && 
+        r.Day === "MON" && 
+        (r.Period === "Period 1" || r.StartTime === "10:25") && 
+        (r.SubjectCode === "Engg. Chem" || (r.SubjectName || "").includes("Chemistry"))
+      );
+
       const grouped = {};
       rows.forEach(r => {
         const sec = r.Section;
         if (!sec) return;
+        
+        // If the Google Sheet still contains the old Sep 2 routine for Section E, do not let it overwrite the new Sep 8 routine!
+        if (sec === "SEC_E" && hasOutdatedSecE) {
+          return;
+        }
+
         if (!grouped[sec]) {
           grouped[sec] = {
             name: r.SectionName || sec,
@@ -1790,7 +1805,6 @@
           const isBreak = (r.Type === "Break" || sCode === "BREAK");
           const grp = r.LabGroup || "ALL";
           
-          // Check if period already exists (e.g. for split labs E1/E2)
           const existing = grouped[sec].schedule[day].find(p => p.start === r.StartTime && p.end === r.EndTime);
           if (existing) {
             existing.isSplit = true;
@@ -1816,6 +1830,10 @@
           }
         }
       });
+
+      if (hasOutdatedSecE) {
+        console.info("[ClassRadar] Google Sheet has outdated Section E routine. Preserving Sep 8 routine in SECTIONS_DATA.");
+      }
 
       // Merge into SECTIONS_DATA
       Object.keys(grouped).forEach(k => {
@@ -2094,6 +2112,16 @@
       }
     };
 
+
+    
+    const TIMETABLE_VERSION = "2026-09-08-SEC_E_NEW";
+    const storedVersion = localStorage.getItem("classradar_timetable_version");
+    if (storedVersion !== TIMETABLE_VERSION) {
+      // Invalidate old cached timetable from previous routine
+      localStorage.removeItem("classradar_cached_timetable");
+      localStorage.setItem("classradar_timetable_version", TIMETABLE_VERSION);
+      console.log("[ClassRadar] Timetable version updated to " + TIMETABLE_VERSION + ". Cleared stale cache.");
+    }
 
     window.addEventListener("DOMContentLoaded", () => {
       syncAllFromGoogleSheets();
