@@ -1,4 +1,4 @@
-const CACHE_NAME = 'classradar-v5-sece-routine';
+const CACHE_NAME = 'classradar-v6-sece-routine';
 const ASSETS = [
   './',
   './index.html',
