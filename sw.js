@@ -1,4 +1,4 @@
-const CACHE_NAME = 'classradar-v9-api-sync';
+const CACHE_NAME = 'classradar-v9-production-ready';
 const ASSETS = [
   './',
   './index.html',
