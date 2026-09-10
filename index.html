@@ -409,25 +409,36 @@
     .tab-bar {
       display: flex;
       border-bottom: 1px solid var(--border-color);
-      margin-bottom: 10px;
-      gap: 8px;
-      overflow-x: auto;
-      scrollbar-width: none;
+      margin-bottom: 12px;
+      gap: 4px;
+      width: 100%;
+      background: rgba(15, 23, 42, 0.4);
+      padding: 4px;
+      border-radius: 10px;
     }
-    .tab-bar::-webkit-scrollbar { display: none; }
 
     .tab-btn {
-      padding: 9px 12px;
+      flex: 1;
+      text-align: center;
+      padding: 9px 4px;
       background: transparent;
       border: none;
       color: var(--text-muted);
-      font-size: 0.88rem;
+      font-size: 0.82rem;
       font-weight: 600;
       cursor: pointer;
+      border-radius: 8px;
       position: relative;
-      transition: color 0.2s;
+      transition: all 0.2s ease;
       white-space: nowrap;
     }
+
+    .tab-btn.active {
+      background: #2563eb;
+      color: #ffffff;
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+    }
+    .tab-btn.active::after { display: none; }
 
     .tab-btn.active { color: #ffffff; }
     .tab-btn.active::after {
@@ -839,10 +850,10 @@
 
     <!-- Tab Navigation -->
     <div class="tab-bar">
-      <button class="tab-btn active" id="tab-daily" onclick="switchTab('daily')">Daily Schedule</button>
-      <button class="tab-btn" id="tab-matrix" onclick="switchTab('matrix')">Weekly Grid</button>
-      <button class="tab-btn" id="tab-faculty" onclick="switchTab('faculty')">Faculty Directory</button>
-      <button class="tab-btn" id="tab-notices" onclick="switchTab(\'notices\')">📢 Notices <span id="notice-badge" style="display:none; background:#ef4444; color:#fff; font-size:10px; font-weight:700; padding:1px 6px; border-radius:10px; margin-left:4px;">0</span></button>
+      <button class="tab-btn active" id="tab-daily" onclick="switchTab('daily')">Daily</button>
+      <button class="tab-btn" id="tab-matrix" onclick="switchTab('matrix')">Grid</button>
+      <button class="tab-btn" id="tab-faculty" onclick="switchTab('faculty')">Faculty</button>
+      <button class="tab-btn" id="tab-notices" onclick="switchTab('notices')">📢 Notices <span id="notice-badge" style="display:none; background:#ef4444; color:#fff; font-size:10px; font-weight:700; padding:1px 6px; border-radius:10px; margin-left:4px;">0</span></button>
     </div>
 
     <!-- TAB 1: Daily Schedule View -->
@@ -1249,8 +1260,8 @@
           breakDiv.className = `timeline-card break-card ${status === 'active' ? 'active-class' : ''}`;
           breakDiv.innerHTML = `
             <div class="time-slot" style="min-width:60px;">
-              <span class="time-start" style="font-size:0.85rem; color:var(--accent-amber);">${item.start}</span>
-              <span class="time-end">${item.end}</span>
+              <span class="time-start" style="font-size:0.85rem; color:var(--accent-amber);">${cleanTimeStr(item.start)}</span>
+              <span class="time-end">${cleanTimeStr(item.end)}</span>
             </div>
             <div style="font-size: 1.4rem;">☕</div>
             <div class="class-info">
@@ -1283,8 +1294,8 @@
 
           card.innerHTML = `
             <div class="time-slot">
-              <span class="time-start">${item.start}</span>
-              <span class="time-end">${item.end}</span>
+              <span class="time-start">${cleanTimeStr(item.start)}</span>
+              <span class="time-end">${cleanTimeStr(item.end)}</span>
               <span class="period-badge">${item.period}</span>
             </div>
             <div class="card-divider" style="background: var(--accent-purple);"></div>
@@ -1308,8 +1319,8 @@
         card.className = `timeline-card ${status === 'active' ? 'active-class' : ''} ${status === 'completed' ? 'completed-class' : ''}`;
         card.innerHTML = `
           <div class="time-slot">
-            <span class="time-start">${item.start}</span>
-            <span class="time-end">${item.end}</span>
+            <span class="time-start">${cleanTimeStr(item.start)}</span>
+            <span class="time-end">${cleanTimeStr(item.end)}</span>
             <span class="period-badge">${item.period}</span>
           </div>
           <div class="card-divider" style="background: ${sub.color};"></div>
@@ -1533,7 +1544,7 @@
         }
 
         metaPeriod.textContent = activeItem.period;
-        metaTime.textContent = `${activeItem.start} - ${activeItem.end}`;
+        metaTime.textContent = `${cleanTimeStr(activeItem.start)} - ${cleanTimeStr(activeItem.end)}`;
 
         const startM = parseTime(activeItem.start);
         const endM = parseTime(activeItem.end);
@@ -1555,10 +1566,13 @@
         }
       } else if (nextItem) {
         const startM = parseTime(nextItem.start);
-        const diffM = startM - currentMinutes;
+        const diffM = Math.max(0, startM - currentMinutes);
+        const hoursLeft = Math.floor(diffM / 60);
+        const minsLeft = diffM % 60;
+        const timeCountdown = hoursLeft > 0 ? `${hoursLeft}h ${minsLeft}m` : `${minsLeft}m`;
 
         statusBadge.className = "status-badge badge-upcoming";
-        statusText.textContent = `Starts in ${diffM}m`;
+        statusText.textContent = `Starts in ${timeCountdown}`;
 
         if (nextItem.isBreak) {
           heroTitle.textContent = "Next: Afternoon Break";
@@ -1736,7 +1750,29 @@
         if (r.c) {
           r.c.forEach((cell, idx) => {
             const colName = cols[idx] || `col_${idx}`;
-            item[colName] = (cell && cell.v !== null && cell.v !== undefined) ? String(cell.v).trim() : "";
+            let val = "";
+            if (cell && cell.v !== null && cell.v !== undefined) {
+              val = String(cell.v).trim();
+              // Check if Google Sheets API sent a Date(...) serial representation
+              const dateMatch = val.match(/^Date\((\d+),(\d+),(\d+)(?:,(\d+),(\d+)(?:,(\d+))?)?\)$/);
+              if (dateMatch) {
+                const hours = dateMatch[4];
+                const minutes = dateMatch[5];
+                if (hours !== undefined && minutes !== undefined) {
+                  val = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+                } else {
+                  const y = dateMatch[1];
+                  const m = String(Number(dateMatch[2]) + 1).padStart(2, '0');
+                  const d = String(dateMatch[3]).padStart(2, '0');
+                  val = `${y}-${m}-${d}`;
+                }
+              }
+            }
+            // If formatted value 'f' exists and value is still messy or empty, try it
+            if (cell && cell.f && (!val || val.includes("Date("))) {
+              val = String(cell.f).trim();
+            }
+            item[colName] = val;
           });
         }
         return item;
@@ -1822,8 +1858,8 @@
             const entry = {
               id: `${day}_${(r.StartTime || "").replace(':', '')}`,
               period: r.Period || "Period",
-              start: r.StartTime,
-              end: r.EndTime,
+              start: cleanTimeStr(r.StartTime),
+              end: cleanTimeStr(r.EndTime),
               isBreak: isBreak
             };
             if (isBreak) {
@@ -2141,7 +2177,7 @@
 
 
     
-    const TIMETABLE_VERSION = "2026-09-08-ALL-SECTIONS-JSON-API-V1";
+    const TIMETABLE_VERSION = "2026-09-10-FLAWLESS-V8";
     const storedVersion = localStorage.getItem("classradar_timetable_version");
     if (storedVersion !== TIMETABLE_VERSION) {
       // Invalidate old cached timetable from previous routine
