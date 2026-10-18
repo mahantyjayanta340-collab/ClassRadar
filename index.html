@@ -1532,9 +1532,19 @@
 
     // REAL-TIME ENGINE
     function updateLiveHero() {
-      if (TODAY_IS_OFF) { applyOffDayUI(); return; }
       const now = new Date();
-      document.getElementById("live-clock").textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const clockEl = document.getElementById("live-clock");
+      if (clockEl) {
+        const h = String(now.getHours()).padStart(2, '0');
+        const m = String(now.getMinutes()).padStart(2, '0');
+        const s = String(now.getSeconds()).padStart(2, '0');
+        clockEl.textContent = `${h}:${m}:${s}`;
+      }
+
+      if (TODAY_IS_OFF) {
+        applyOffDayUI();
+        return;
+      }
 
       const sec = getCurrentSection();
       const todayKey = getDayKey(now);
