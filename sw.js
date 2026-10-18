@@ -1,4 +1,4 @@
-const CACHE_NAME = 'classradar-v12-exact-audit';
+const CACHE_NAME = 'classradar-v13-flawless-frontend';
 const ASSETS = [
   './',
   './index.html',
