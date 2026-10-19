@@ -717,6 +717,8 @@
     }
     .step-list { margin-left: 20px; display: flex; flex-direction: column; gap: 6px; }
   </style>
+  <!-- OneSignal Web Push SDK v16 for Mobile & Web Notifications -->
+  <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
 </head>
 <body>
 
@@ -1192,7 +1194,94 @@
       }
     }
 
+
+    // ==========================================
+    // ONESIGNAL WEB & MOBILE PUSH ENGINE
+    // ==========================================
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+
+    function initOneSignal() {
+      if (!ONESIGNAL_APP_ID || ONESIGNAL_APP_ID === "YOUR_ONESIGNAL_APP_ID") {
+        console.log("[OneSignal] Push ready. Configure ONESIGNAL_APP_ID with your OneSignal App ID.");
+        return;
+      }
+
+      OneSignalDeferred.push(async function(OneSignal) {
+        try {
+          await OneSignal.init({
+            appId: ONESIGNAL_APP_ID,
+            allowLocalhostAsSecureOrigin: true,
+            notifyButton: {
+              enable: false // Use ClassRadar native controls
+            }
+          });
+
+          // Check if already subscribed
+          const isPushGranted = OneSignal.Notifications.permission;
+          if (isPushGranted) {
+            updateNotifyStatus("Active");
+          }
+
+          // Listen for push subscription changes
+          OneSignal.User.PushSubscription.addEventListener("change", function(event) {
+            if (event.current.optedIn) {
+              updateNotifyStatus("Active");
+              syncOneSignalUserTags();
+            } else {
+              updateNotifyStatus("denied");
+            }
+          });
+
+          // Sync initial section & group tags
+          syncOneSignalUserTags();
+        } catch (err) {
+          console.warn("[OneSignal] Initialization note:", err);
+        }
+      });
+    }
+
+    function syncOneSignalUserTags() {
+      if (window.OneSignalDeferred && ONESIGNAL_APP_ID && ONESIGNAL_APP_ID !== "YOUR_ONESIGNAL_APP_ID") {
+        OneSignalDeferred.push(async function(OneSignal) {
+          try {
+            const sec = getCurrentSection();
+            await OneSignal.User.addTags({
+              section: currentSectionId,
+              section_name: sec ? (sec.shortName || sec.name) : currentSectionId,
+              group: currentGroup,
+              university: "ARKA_JAIN",
+              department: "BTech_1st_Sem"
+            });
+            console.log("[OneSignal] Synced tags:", { section: currentSectionId, group: currentGroup });
+          } catch (e) {
+            console.warn("[OneSignal] Tag sync note:", e);
+          }
+        });
+      }
+    }
+
     function requestNotificationPermission() {
+      // If OneSignal is configured, request via OneSignal SDK
+      if (window.OneSignalDeferred && ONESIGNAL_APP_ID && ONESIGNAL_APP_ID !== "YOUR_ONESIGNAL_APP_ID") {
+        OneSignalDeferred.push(async function(OneSignal) {
+          try {
+            await OneSignal.Notifications.requestPermission();
+            const granted = OneSignal.Notifications.permission;
+            updateNotifyStatus(granted ? "Active" : "denied");
+            if (granted) {
+              syncOneSignalUserTags();
+              showToast("🔔 Push Notifications Active", "You'll receive mobile and desktop alerts for classes and notices.");
+            }
+          } catch (e) {
+            fallbackRequestPermission();
+          }
+        });
+      } else {
+        fallbackRequestPermission();
+      }
+    }
+
+    function fallbackRequestPermission() {
       if (!("Notification" in window)) return;
       Notification.requestPermission().then((perm) => {
         updateNotifyStatus(perm === "granted" ? "Active" : perm);
@@ -1289,6 +1378,7 @@
 
       renderTimeline(selectedDayKey);
       updateLiveHero();
+      syncOneSignalUserTags();
     }
 
     function switchTab(tabKey) {
@@ -1859,6 +1949,9 @@
        ============================================================ */
     // Google Sheets Cloud Database Configuration
     // 1. Lightweight Control Panel (7 rows: Notices & Holidays - loads in 0.2s on mobile!)
+    // 3. OneSignal Push Notification Configuration (Web & Mobile PWA)
+    const ONESIGNAL_APP_ID = "YOUR_ONESIGNAL_APP_ID"; // Paste your OneSignal App ID here
+
     const CONTROL_SHEET_ID = "1iJeSrYSYj6y1uQ8GFLOh_BDbevbZKD6LX1NRTJ3RXvk";
     // 2. Master Timetable Database (245 rows: full semester schedules)
     const MASTER_SHEET_ID = "1zjxmcQx1hobDryqcgY24cYc2xusUAmKzikb4HBOhqus";
@@ -2426,7 +2519,7 @@
       }
     }
 
-    const TIMETABLE_VERSION = "2026-10-19-HOLIDAY-RENDER-FIX-STABLE";
+    const TIMETABLE_VERSION = "2026-10-20-ONESIGNAL-V15-STABLE";
     const storedVersion = localStorage.getItem("classradar_timetable_version");
     if (storedVersion !== TIMETABLE_VERSION) {
       // Invalidate old cached timetable from previous routine
@@ -2457,6 +2550,7 @@
       setInterval(updateLiveHero, 1000);
 
       // 5. Setup notifications settings
+      initOneSignal();
       document.getElementById("notify-lead").value = leadTimeMinutes.toString();
       if ("Notification" in window) {
         updateNotifyStatus(Notification.permission === "granted" ? "Active" : Notification.permission);
