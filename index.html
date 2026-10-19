@@ -1235,6 +1235,9 @@
       currentSectionId = secId;
       localStorage.setItem("classradar_section", secId);
 
+      // Re-evaluate holiday / off-day state immediately for newly selected section
+      evaluateTodayOffState();
+
       const sec = getCurrentSection();
       document.getElementById("section-picker").value = secId;
       document.getElementById("section-header-meta").textContent = `${sec.room} • ${sec.dept}`;
@@ -1367,15 +1370,35 @@
       const isToday = todayKey === dayKey;
       const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
+      // If today is a holiday and student is viewing today, show holiday suspension notice
+      if (isToday && TODAY_IS_OFF && TODAY_OFF_INFO) {
+        countBadge.textContent = "Classes Suspended";
+        countBadge.style.background = "rgba(245, 158, 11, 0.18)";
+        countBadge.style.color = "#fbbf24";
+
+        const alertBox = document.createElement("div");
+        alertBox.style.cssText = "background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; display: flex; align-items: flex-start; gap: 10px;";
+        alertBox.innerHTML = `
+          <span style="font-size: 1.4rem; line-height: 1;">🌴</span>
+          <div>
+            <div style="font-weight: 700; font-size: 0.92rem; color: #fbbf24;">${TODAY_OFF_INFO.Reason}</div>
+            <div style="font-size: 0.82rem; color: #cbd5e1; margin-top: 3px; line-height: 1.4;">${TODAY_OFF_INFO.DisplayMessage} (Regular timetable shown below for reference only)</div>
+          </div>
+        `;
+        container.appendChild(alertBox);
+      }
+
       items.forEach(rawItem => {
         const item = resolveSlotItem(rawItem, sec);
         const startM = parseTime(item.start);
         const endM = parseTime(item.end);
 
         let status = "upcoming";
-        if (isToday) {
+        if (isToday && !TODAY_IS_OFF) {
           if (currentMinutes >= endM) status = "completed";
           else if (currentMinutes >= startM && currentMinutes < endM) status = "active";
+        } else if (isToday && TODAY_IS_OFF) {
+          status = "suspended";
         }
 
         if (item.isBreak) {
@@ -1840,8 +1863,19 @@
     // 2. Master Timetable Database (245 rows: full semester schedules)
     const MASTER_SHEET_ID = "1zjxmcQx1hobDryqcgY24cYc2xusUAmKzikb4HBOhqus";
 
-    let ACTIVE_NOTICES = [];
+    // Synchronous state hydration from localStorage at startup (0ms offline load)
     let ACTIVE_OFFDAYS = [];
+    try {
+      const cachedOff = localStorage.getItem("classradar_cached_offdays");
+      if (cachedOff) ACTIVE_OFFDAYS = JSON.parse(cachedOff);
+    } catch (e) {}
+
+    let ACTIVE_NOTICES = [];
+    try {
+      const cachedNotices = localStorage.getItem("classradar_cached_notices");
+      if (cachedNotices) ACTIVE_NOTICES = JSON.parse(cachedNotices);
+    } catch (e) {}
+
     let TODAY_IS_OFF = false;
     let TODAY_OFF_INFO = null;
 
@@ -1855,6 +1889,24 @@
      * @param {string} sheetName - Optional tab name (e.g. "Notice_Board", "Class_Off_Days")
      * @returns {Promise<Array<Object>>} Array of row objects mapped by column header
      */
+    // Resilient Google Sheets row value extractor (case, space & index insensitive)
+    function getRowField(r, ...aliases) {
+      if (!r || typeof r !== "object") return "";
+      for (const a of aliases) {
+        if (r[a] !== undefined && r[a] !== null && String(r[a]).trim() !== "") {
+          return String(r[a]).trim();
+        }
+        const cleanA = String(a).toLowerCase().replace(/[^a-z0-9]/g, "");
+        for (const k of Object.keys(r)) {
+          const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, "");
+          if (cleanK === cleanA && r[k] !== undefined && r[k] !== null && String(r[k]).trim() !== "") {
+            return String(r[k]).trim();
+          }
+        }
+      }
+      return "";
+    }
+
     async function fetchGoogleSheetAPI(sheetId, sheetName = "") {
       let endpoint = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json`;
       if (sheetName) {
@@ -2276,30 +2328,39 @@
           const notices = [];
 
           cpRows.forEach((r, idx) => {
-            const type = (r.Type || "").trim().toUpperCase();
-            const status = (r.Status || "Active").trim();
+            const type = getRowField(r, "Type", "col_0", "A").toUpperCase();
+            const rawStatus = getRowField(r, "Status", "IsActive", "col_7", "H") || "Active";
+            const dateVal = getRowField(r, "Date", "col_1", "B");
+            const titleOrReason = getRowField(r, "Title_Or_Reason", "Reason", "Title", "col_2", "C");
+            const message = getRowField(r, "Message", "DisplayMessage", "col_3", "D");
+            const targetSection = getRowField(r, "TargetSection", "AffectedSection", "col_4", "E") || "ALL";
+            const categoryPriority = getRowField(r, "Priority_Or_Category", "Priority", "Category", "col_5", "F");
+            const disableReminders = getRowField(r, "DisableReminders", "col_6", "G") || "YES";
 
-            if (type === "HOLIDAY" || r.DisableReminders === "YES") {
+            if (type === "HOLIDAY" || disableReminders.toUpperCase() === "YES" || (!type && titleOrReason.toLowerCase().includes("holiday"))) {
               holidays.push({
-                Date: r.Date || "",
-                Reason: r.Title_Or_Reason || r.Reason || r.Title || "University Holiday",
-                DisplayMessage: r.Message || r.DisplayMessage || "Classes suspended for today.",
-                AffectedSection: r.TargetSection || r.AffectedSection || "ALL",
-                DisableReminders: r.DisableReminders || "YES",
-                Status: status
+                Date: dateVal,
+                Reason: titleOrReason || "University Holiday",
+                Title_Or_Reason: titleOrReason || "University Holiday",
+                DisplayMessage: message || "All classes suspended for today.",
+                Message: message || "All classes suspended for today.",
+                AffectedSection: targetSection,
+                DisableReminders: disableReminders,
+                Status: rawStatus
               });
-            } else if (type === "NOTICE" || (!type && r.Title_Or_Reason)) {
-              const priority = (r.Priority_Or_Category || r.Priority || "").trim();
+            } else if (type === "NOTICE" || (!type && titleOrReason)) {
               notices.push({
-                NoticeID: r.NoticeID || `N_${idx}_${r.Date || ""}`,
-                Date: r.Date || "",
-                Title: r.Title_Or_Reason || r.Title || "Campus Announcement",
-                Message: r.Message || r.DisplayMessage || "",
-                TargetSection: r.TargetSection || r.AffectedSection || "ALL",
-                Category: r.Priority_Or_Category || r.Category || "General",
-                Priority: (priority.toLowerCase() === "urgent" || priority.toLowerCase() === "high") ? "High" : "Normal",
-                Status: status,
-                IsActive: (status.toLowerCase() === "active") ? "YES" : "NO"
+                NoticeID: r.NoticeID || `N_${idx}_${dateVal}`,
+                Date: dateVal,
+                Title: titleOrReason || "Campus Announcement",
+                Title_Or_Reason: titleOrReason || "Campus Announcement",
+                Message: message,
+                DisplayMessage: message,
+                TargetSection: targetSection,
+                Category: categoryPriority || "General",
+                Priority: (categoryPriority.toLowerCase() === "urgent" || categoryPriority.toLowerCase() === "high") ? "High" : "Normal",
+                Status: rawStatus,
+                IsActive: (rawStatus.toLowerCase() === "active") ? "YES" : "NO"
               });
             }
           });
@@ -2365,7 +2426,7 @@
       }
     }
 
-    const TIMETABLE_VERSION = "2026-10-18-AUTO-REFRESH-LIVE-RENDER-V13";
+    const TIMETABLE_VERSION = "2026-10-19-HOLIDAY-RENDER-FIX-STABLE";
     const storedVersion = localStorage.getItem("classradar_timetable_version");
     if (storedVersion !== TIMETABLE_VERSION) {
       // Invalidate old cached timetable from previous routine

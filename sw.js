@@ -1,4 +1,4 @@
-const CACHE_NAME = 'classradar-v14-auto-refresh-live-render';
+const CACHE_NAME = 'classradar-v14-holiday-render-fix';
 const ASSETS = [
   './',
   './index.html',
