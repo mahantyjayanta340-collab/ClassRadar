@@ -736,6 +736,9 @@
         </div>
       </div>
       <div class="header-actions">
+        <button id="btn-install" class="btn btn-primary btn-sm" onclick="handleInstallButtonClick()" style="display:none; gap:6px; align-items:center;">
+          <span>📲 Install</span>
+        </button>
         <button class="btn btn-outline btn-sm" onclick="showHelpModal()">
           <span>❓ Help</span>
         </button>
@@ -745,6 +748,21 @@
 
   <!-- Main Content -->
   <main>
+
+    <!-- Notification Opt-In Banner -->
+    <div id="notif-permission-banner" style="display:none; margin: 0 0 16px 0; background: linear-gradient(135deg, rgba(37,99,235,0.22), rgba(16,185,129,0.18)); border: 1px solid rgba(59,130,246,0.4); border-radius: 12px; padding: 12px 16px; align-items: center; justify-content: space-between; gap: 12px;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="font-size: 1.5rem;">🔔</span>
+        <div>
+          <div style="font-weight: 700; font-size: 0.92rem; color: #ffffff;">Enable Live Class & Holiday Alerts</div>
+          <div style="font-size: 0.78rem; color: var(--text-muted);">Get real-time countdown reminders and campus holiday notices on your device.</div>
+        </div>
+      </div>
+      <div style="display: flex; gap: 8px; flex-shrink: 0;">
+        <button class="btn btn-primary btn-sm" onclick="triggerAppNotificationPrompt()" style="font-weight:700;">Allow Alerts</button>
+        <button class="btn btn-outline btn-sm" onclick="dismissNotifBanner()">Later</button>
+      </div>
+    </div>
 
     <!-- SECTION SELECTOR BAR -->
     <div class="section-selector-card">
@@ -978,6 +996,13 @@
   </div>
 
   <script>
+    // ============================================================
+    // 🔔 CLASSRADAR MAIN CONFIGURATION (EDIT YOUR KEYS & SHEETS HERE)
+    // ============================================================
+    const ONESIGNAL_APP_ID = "YOUR_ONESIGNAL_APP_ID"; // 1. Paste OneSignal App ID here
+    const CONTROL_SHEET_ID = "1iJeSrYSYj6y1uQ8GFLOh_BDbevbZKD6LX1NRTJ3RXvk"; // 2. Paste Control Panel Sheet ID here
+    const MASTER_SHEET_ID = "1zjxmcQx1hobDryqcgY24cYc2xusUAmKzikb4HBOhqus"; // 3. Master Timetable ID (already connected)
+
     // ==========================================
     // GLOBAL TIME HELPERS (HOISTED & GUARANTEED)
     // ==========================================
@@ -1180,15 +1205,15 @@
         if (navigator.serviceWorker && navigator.serviceWorker.controller) {
           navigator.serviceWorker.ready.then((reg) => {
             reg.showNotification(title, {
-              icon: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAYAAABS3GwHAAAFcElEQVR4nO3dL68cVRzH4XNJsVxISIpvUlFMRV1dBb4WR1Jd0ReA4AVUoElw2HpEXR3iGgwJHtEEWosohkmWZf/Mzp0558x8n0e2l53pvb/PnLO7s5er67sPPhQI9VHrE4CWBEA0ARBNAEQTANEEQDQBEE0ARBMA0QRANAEQTQBEEwDRBEA0ARBNAEQTANEEQLQ7rU9gqqcvb1qfAntevXjY+hQudrWWzwQb+PVZQxBdB2Dot6PXGLoMwOBvV28hdBWAwc/RSwjdvApk+LP08vNuvgJM/Ua8ef1u3hPh1h4/uZ7037VcDZoGcOnwG/r1uDSGVhE0C2Ds8Bv69RsbQ4sImgQwZvgN/rr99sPnZ7/mm5/+/t+f1Y6gegCGf7vGDP0xuzHUjKBqAOeG3+Cv020Gf98QQq0Iqr0Mavi3ac7hL6WUH7/+uJRS72XSKjfDGf7tGTP4n/383dG/+/Orb4/+3RBBKTeLrwRVtkCnAjD863Nq+E8N/TGnYvj0iy8vfrxLLB6A4d+WY8M/ZfD3HQthyQgWfQ5g+LdlyeE/9Th//fHrLI9/yGo/EEN7cw3+occ8tS2a02IrgKv/tsz9as+llloFqt8NavjX59DwL3H1P/f4S0SwSAC93OrKMpYe/prHqboCuPqvT+utz765V4FuPhDDOtS6+tc63uwB2P6wJtVWANuf9elt+zOYcxtkC8Rotbc/NY4rAKLNGsCx/b/tD72yAhBNAEQTANEEQDQBMFqtW5RrHlcAHHX/2dvWp3DQod8nNJUAiCYALlJ7G7T08QTASb1tg+bc/pQiACaotQrUOI4AOOvQKrD0cB56/Lmv/qUIgJFab4WWGP5S/FoUbmG4Ss95u3LtJ9lWAEY7tgrMNbTHHmepq38pVgAudP/Z24OfFLvNanAqoCWHvxQBMMGxCEr57zBP/e3Qu8eZ+j/eG0sATDJsh059bnjq1qjmE+74AHr94HdNtxm4U6tB7XOZIj4Abm/MajD2MWoTALPZHeIxMbR+b6EUAbCQHoZ7DO8DEE0ARBMA0QRANAEQTQBEEwDRBEA0ARAt/p3gtbxjyTKsAEQTANEEQDQBEE0ARIt/FeiX7z/5vdaxHj1/f2/s1/Z6XltjBSCaAIgmAKIJgGgCIJoAiCYAogmAaAIgmgCIJgCiCYBoAiCaAIgmAKIJgGgCIJoAiCYAogmAaAIgmgCIJgCiCYBoAiCaAIgmAKIJgGgCIJoAiCYAogmAaAIgmgCIJgCiCYBoAiCaAIgmAKIJgGgCIJoAiCYAogmAaAIgmgCIJgCiCYBoAiCaAIgmAKIJgGgCIJoAiCYAogmAaAIgmgCIJgCiCYBoAiDandYn0Nqj5+/vtT6HQ3o9r62xAhBt1gBevXh48M8fP7me8zCEODY3x+ZsCisA0QRAtGoB2AZxiVrzMnsAc+7PYN/c82ULRLSqAdgGMUbNOVkkANsglrDEXFXfAlkFOKX2fCwWwKlaRcAhp+ZiqV2FJ8FEWzQAqwBjtbj6l1JhBRAB57Qa/lI62AKJIFvrn3+VAM5V3PqbQBvnfu41Xk6vtgKIgF09DH8ppVxd333wocqR/vX05c3Zr3nz+t3yJ0ITYy50Nd9Irf4cYMw/zmqwTb0NfykNVoDBmJWgFKvBFoy9oLW4haZZAKWMj2AghvW4dBVvdf9Y0wBKuTyCgRj6M3Xr2vLmyeYBDKaGwHr1cNdw8zfCBj18M6inl593NyvALqvBdvUy+IMuAxgIYTt6G/xB1wHsEsP69Dr0u1YTwD5B9GcNA79vtQHAHLp5FQhaEADRBEA0ARBNAEQTANEEQDQBEE0ARBMA0QRANAEQTQBEEwDRBEA0ARBNAET7B0lbb2vuUmhKAAAAAElFTkSuQmCC",
-              badge: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAYAAABS3GwHAAAFcElEQVR4nO3dL68cVRzH4XNJsVxISIpvUlFMRV1dBb4WR1Jd0ReA4AVUoElw2HpEXR3iGgwJHtEEWosohkmWZf/Mzp0558x8n0e2l53pvb/PnLO7s5er67sPPhQI9VHrE4CWBEA0ARBNAEQTANEEQDQBEE0ARBMA0QRANAEQTQBEEwDRBEA0ARBNAEQTANEEQLQ7rU9gqqcvb1qfAntevXjY+hQudrWWzwQb+PVZQxBdB2Dot6PXGLoMwOBvV28hdBWAwc/RSwjdvApk+LP08vNuvgJM/Ua8ef1u3hPh1h4/uZ7037VcDZoGcOnwG/r1uDSGVhE0C2Ds8Bv69RsbQ4sImgQwZvgN/rr99sPnZ7/mm5/+/t+f1Y6gegCGf7vGDP0xuzHUjKBqAOeG3+Cv020Gf98QQq0Iqr0Mavi3ac7hL6WUH7/+uJRS72XSKjfDGf7tGTP4n/383dG/+/Orb4/+3RBBKTeLrwRVtkCnAjD863Nq+E8N/TGnYvj0iy8vfrxLLB6A4d+WY8M/ZfD3HQthyQgWfQ5g+LdlyeE/9Th//fHrLI9/yGo/EEN7cw3+occ8tS2a02IrgKv/tsz9as+llloFqt8NavjX59DwL3H1P/f4S0SwSAC93OrKMpYe/prHqboCuPqvT+utz765V4FuPhDDOtS6+tc63uwB2P6wJtVWANuf9elt+zOYcxtkC8Rotbc/NY4rAKLNGsCx/b/tD72yAhBNAEQTANEEQDQBMFqtW5RrHlcAHHX/2dvWp3DQod8nNJUAiCYALlJ7G7T08QTASb1tg+bc/pQiACaotQrUOI4AOOvQKrD0cB56/Lmv/qUIgJFab4WWGP5S/FoUbmG4Ss95u3LtJ9lWAEY7tgrMNbTHHmepq38pVgAudP/Z24OfFLvNanAqoCWHvxQBMMGxCEr57zBP/e3Qu8eZ+j/eG0sATDJsh059bnjq1qjmE+74AHr94HdNtxm4U6tB7XOZIj4Abm/MajD2MWoTALPZHeIxMbR+b6EUAbCQHoZ7DO8DEE0ARBMA0QRANAEQTQBEEwDRBEA0ARAt/p3gtbxjyTKsAEQTANEEQDQBEE0ARIt/FeiX7z/5vdaxHj1/f2/s1/Z6XltjBSCaAIgmAKIJgGgCIJoAiCYAogmAaAIgmgCIJgCiCYBoAiCaAIgmAKIJgGgCIJoAiCYAogmAaAIgmgCIJgCiCYBoAiCaAIgmAKIJgGgCIJoAiCYAogmAaAIgmgCIJgCiCYBoAiCaAIgmAKIJgGgCIJoAiCYAogmAaAIgmgCIJgCiCYBoAiCaAIgmAKIJgGgCIJoAiCYAogmAaAIgmgCIJgCiCYBoAiDandYn0Nqj5+/vtT6HQ3o9r62xAhBt1gBevXh48M8fP7me8zCEODY3x+ZsCisA0QRAtGoB2AZxiVrzMnsAc+7PYN/c82ULRLSqAdgGMUbNOVkkANsglrDEXFXfAlkFOKX2fCwWwKlaRcAhp+ZiqV2FJ8FEWzQAqwBjtbj6l1JhBRAB57Qa/lI62AKJIFvrn3+VAM5V3PqbQBvnfu41Xk6vtgKIgF09DH8ppVxd333wocqR/vX05c3Zr3nz+t3yJ0ITYy50Nd9Irf4cYMw/zmqwTb0NfykNVoDBmJWgFKvBFoy9oLW4haZZAKWMj2AghvW4dBVvdf9Y0wBKuTyCgRj6M3Xr2vLmyeYBDKaGwHr1cNdw8zfCBj18M6inl593NyvALqvBdvUy+IMuAxgIYTt6G/xB1wHsEsP69Dr0u1YTwD5B9GcNA79vtQHAHLp5FQhaEADRBEA0ARBNAEQTANEEQDQBEE0ARBMA0QRANAEQTQBEEwDRBEA0ARBNAET7B0lbb2vuUmhKAAAAAElFTkSuQmCC",
+              icon: "./icon-192.png",
+              badge: "./icon-192.png",
               vibrate: [200, 100, 200],
               ...options
             });
           });
         } else {
           try {
-            new Notification(title, { icon: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAYAAABS3GwHAAAFcElEQVR4nO3dL68cVRzH4XNJsVxISIpvUlFMRV1dBb4WR1Jd0ReA4AVUoElw2HpEXR3iGgwJHtEEWosohkmWZf/Mzp0558x8n0e2l53pvb/PnLO7s5er67sPPhQI9VHrE4CWBEA0ARBNAEQTANEEQDQBEE0ARBMA0QRANAEQTQBEEwDRBEA0ARBNAEQTANEEQLQ7rU9gqqcvb1qfAntevXjY+hQudrWWzwQb+PVZQxBdB2Dot6PXGLoMwOBvV28hdBWAwc/RSwjdvApk+LP08vNuvgJM/Ua8ef1u3hPh1h4/uZ7037VcDZoGcOnwG/r1uDSGVhE0C2Ds8Bv69RsbQ4sImgQwZvgN/rr99sPnZ7/mm5/+/t+f1Y6gegCGf7vGDP0xuzHUjKBqAOeG3+Cv020Gf98QQq0Iqr0Mavi3ac7hL6WUH7/+uJRS72XSKjfDGf7tGTP4n/383dG/+/Orb4/+3RBBKTeLrwRVtkCnAjD863Nq+E8N/TGnYvj0iy8vfrxLLB6A4d+WY8M/ZfD3HQthyQgWfQ5g+LdlyeE/9Th//fHrLI9/yGo/EEN7cw3+occ8tS2a02IrgKv/tsz9as+llloFqt8NavjX59DwL3H1P/f4S0SwSAC93OrKMpYe/prHqboCuPqvT+utz765V4FuPhDDOtS6+tc63uwB2P6wJtVWANuf9elt+zOYcxtkC8Rotbc/NY4rAKLNGsCx/b/tD72yAhBNAEQTANEEQDQBMFqtW5RrHlcAHHX/2dvWp3DQod8nNJUAiCYALlJ7G7T08QTASb1tg+bc/pQiACaotQrUOI4AOOvQKrD0cB56/Lmv/qUIgJFab4WWGP5S/FoUbmG4Ss95u3LtJ9lWAEY7tgrMNbTHHmepq38pVgAudP/Z24OfFLvNanAqoCWHvxQBMMGxCEr57zBP/e3Qu8eZ+j/eG0sATDJsh059bnjq1qjmE+74AHr94HdNtxm4U6tB7XOZIj4Abm/MajD2MWoTALPZHeIxMbR+b6EUAbCQHoZ7DO8DEE0ARBMA0QRANAEQTQBEEwDRBEA0ARAt/p3gtbxjyTKsAEQTANEEQDQBEE0ARIt/FeiX7z/5vdaxHj1/f2/s1/Z6XltjBSCaAIgmAKIJgGgCIJoAiCYAogmAaAIgmgCIJgCiCYBoAiCaAIgmAKIJgGgCIJoAiCYAogmAaAIgmgCIJgCiCYBoAiCaAIgmAKIJgGgCIJoAiCYAogmAaAIgmgCIJgCiCYBoAiCaAIgmAKIJgGgCIJoAiCYAogmAaAIgmgCIJgCiCYBoAiCaAIgmAKIJgGgCIJoAiCYAogmAaAIgmgCIJgCiCYBoAiDandYn0Nqj5+/vtT6HQ3o9r62xAhBt1gBevXh48M8fP7me8zCEODY3x+ZsCisA0QRAtGoB2AZxiVrzMnsAc+7PYN/c82ULRLSqAdgGMUbNOVkkANsglrDEXFXfAlkFOKX2fCwWwKlaRcAhp+ZiqV2FJ8FEWzQAqwBjtbj6l1JhBRAB57Qa/lI62AKJIFvrn3+VAM5V3PqbQBvnfu41Xk6vtgKIgF09DH8ppVxd333wocqR/vX05c3Zr3nz+t3yJ0ITYy50Nd9Irf4cYMw/zmqwTb0NfykNVoDBmJWgFKvBFoy9oLW4haZZAKWMj2AghvW4dBVvdf9Y0wBKuTyCgRj6M3Xr2vLmyeYBDKaGwHr1cNdw8zfCBj18M6inl593NyvALqvBdvUy+IMuAxgIYTt6G/xB1wHsEsP69Dr0u1YTwD5B9GcNA79vtQHAHLp5FQhaEADRBEA0ARBNAEQTANEEQDQBEE0ARBMA0QRANAEQTQBEEwDRBEA0ARBNAET7B0lbb2vuUmhKAAAAAElFTkSuQmCC", ...options });
+            new Notification(title, { icon: "./icon-192.png", ...options });
           } catch (e) {}
         }
       }
@@ -1220,6 +1245,13 @@
           const isPushGranted = OneSignal.Notifications.permission;
           if (isPushGranted) {
             updateNotifyStatus("Active");
+          } else {
+            // Automatically prompt with OneSignal slidedown on visit
+            setTimeout(() => {
+              try {
+                OneSignal.Slidedown.promptPush();
+              } catch(e) {}
+            }, 1200);
           }
 
           // Listen for push subscription changes
@@ -1258,6 +1290,33 @@
           }
         });
       }
+    }
+
+
+    function checkNotificationBanner() {
+      const banner = document.getElementById("notif-permission-banner");
+      if (!banner) return;
+      if (!("Notification" in window)) {
+        banner.style.display = "none";
+        return;
+      }
+      const isDismissed = sessionStorage.getItem("classradar_notif_banner_dismissed");
+      if (Notification.permission === "default" && !isDismissed) {
+        banner.style.display = "flex";
+      } else {
+        banner.style.display = "none";
+      }
+    }
+
+    function dismissNotifBanner() {
+      sessionStorage.setItem("classradar_notif_banner_dismissed", "true");
+      const banner = document.getElementById("notif-permission-banner");
+      if (banner) banner.style.display = "none";
+    }
+
+    function triggerAppNotificationPrompt() {
+      dismissNotifBanner();
+      requestNotificationPermission();
     }
 
     function requestNotificationPermission() {
@@ -1948,13 +2007,7 @@
        Spreadsheet ID: 1u8_0lSfPvbS3NKKCiKWX0BtoFLGC5Ld1XWZr8Hg1BLI
        ============================================================ */
     // Google Sheets Cloud Database Configuration
-    // 1. Lightweight Control Panel (7 rows: Notices & Holidays - loads in 0.2s on mobile!)
-    // 3. OneSignal Push Notification Configuration (Web & Mobile PWA)
-    const ONESIGNAL_APP_ID = "6272511a-9640-4e3a-a073-b64e2e1bb517"; // Paste your OneSignal App ID here
-
-    const CONTROL_SHEET_ID = "1iJeSrYSYj6y1uQ8GFLOh_BDbevbZKD6LX1NRTJ3RXvk";
-    // 2. Master Timetable Database (245 rows: full semester schedules)
-    const MASTER_SHEET_ID = "1zjxmcQx1hobDryqcgY24cYc2xusUAmKzikb4HBOhqus";
+    // Google Sheets Cloud Database connection configured at top of script (lines 984-986)
 
     // Synchronous state hydration from localStorage at startup (0ms offline load)
     let ACTIVE_OFFDAYS = [];
@@ -1971,6 +2024,9 @@
 
     let TODAY_IS_OFF = false;
     let TODAY_OFF_INFO = null;
+    try {
+      evaluateTodayOffState();
+    } catch (e) {}
 
     // ==========================================
     // GOOGLE SHEETS VISUALIZATION JSON API (Zero-Key Native JSON API)
@@ -2551,6 +2607,7 @@
 
       // 5. Setup notifications settings
       initOneSignal();
+      checkNotificationBanner();
       document.getElementById("notify-lead").value = leadTimeMinutes.toString();
       if ("Notification" in window) {
         updateNotifyStatus(Notification.permission === "granted" ? "Active" : Notification.permission);
