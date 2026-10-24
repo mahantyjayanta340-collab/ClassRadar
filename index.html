@@ -999,7 +999,7 @@
     // ============================================================
     // 🔔 CLASSRADAR MAIN CONFIGURATION (EDIT YOUR KEYS & SHEETS HERE)
     // ============================================================
-    const ONESIGNAL_APP_ID = "6272511a-9640-4e3a-a073-b64e2e1bb517"; // 1. Paste OneSignal App ID here
+    const ONESIGNAL_APP_ID = "YOUR_ONESIGNAL_APP_ID"; // 1. Paste OneSignal App ID here
     const CONTROL_SHEET_ID = "1iJeSrYSYj6y1uQ8GFLOh_BDbevbZKD6LX1NRTJ3RXvk"; // 2. Paste Control Panel Sheet ID here
     const MASTER_SHEET_ID = "1zjxmcQx1hobDryqcgY24cYc2xusUAmKzikb4HBOhqus"; // 3. Master Timetable ID (already connected)
 
@@ -1197,25 +1197,61 @@
       }, 5000);
     }
 
-    function sendNotification(title, options = {}) {
+    async function sendNotification(title, options = {}) {
       playChime();
       showToast(title, options.body || "");
 
-      if ("Notification" in window && Notification.permission === "granted") {
-        if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-          navigator.serviceWorker.ready.then((reg) => {
-            reg.showNotification(title, {
-              icon: "./icon-192.png",
-              badge: "./icon-192.png",
-              vibrate: [200, 100, 200],
-              ...options
-            });
-          });
-        } else {
-          try {
-            new Notification(title, { icon: "./icon-192.png", ...options });
-          } catch (e) {}
+      if (!("Notification" in window)) return;
+
+      // If permission is still default (e.g. user clicked Test Alert), request it immediately
+      if (Notification.permission === "default") {
+        try {
+          const perm = await Notification.requestPermission();
+          updateNotifyStatus(perm === "granted" ? "Active" : perm);
+          if (perm !== "granted") return;
+        } catch (e) {
+          return;
         }
+      }
+
+      if (Notification.permission !== "granted") return;
+
+      const notifOptions = {
+        icon: "./icon-192.png",
+        badge: "./icon-192.png",
+        vibrate: [200, 100, 200],
+        requireInteraction: false,
+        data: { url: "./" },
+        ...options
+      };
+
+      // Mandatory on Android Chrome: use ServiceWorkerRegistration.showNotification()
+      // even when navigator.serviceWorker.controller is null on first load
+      if ("serviceWorker" in navigator && (window.location.protocol === "http:" || window.location.protocol === "https:")) {
+        try {
+          let reg = await navigator.serviceWorker.getRegistration();
+          if (!reg) {
+            reg = await navigator.serviceWorker.register("./sw.js", { scope: "./" });
+          }
+          if (reg && typeof reg.showNotification === "function") {
+            await reg.showNotification(title, notifOptions);
+            return;
+          }
+          const readyReg = await navigator.serviceWorker.ready;
+          if (readyReg && typeof readyReg.showNotification === "function") {
+            await readyReg.showNotification(title, notifOptions);
+            return;
+          }
+        } catch (swErr) {
+          console.warn("[ClassRadar] ServiceWorker showNotification fallback:", swErr);
+        }
+      }
+
+      // Desktop browser fallback
+      try {
+        new Notification(title, notifOptions);
+      } catch (e) {
+        console.warn("[ClassRadar] Notification fallback warning:", e);
       }
     }
 
@@ -1224,18 +1260,38 @@
     // ONESIGNAL WEB & MOBILE PUSH ENGINE
     // ==========================================
     window.OneSignalDeferred = window.OneSignalDeferred || [];
+    let oneSignalInitialized = false;
 
-    function initOneSignal() {
-      if (!ONESIGNAL_APP_ID || ONESIGNAL_APP_ID === "YOUR_ONESIGNAL_APP_ID") {
-        console.log("[OneSignal] Push ready. Configure ONESIGNAL_APP_ID with your OneSignal App ID.");
+    function getActiveOneSignalAppId() {
+      if (ONESIGNAL_APP_ID && ONESIGNAL_APP_ID !== "YOUR_ONESIGNAL_APP_ID") {
+        return ONESIGNAL_APP_ID.trim();
+      }
+      try {
+        const cachedId = localStorage.getItem("classradar_onesignal_app_id");
+        if (cachedId && cachedId !== "YOUR_ONESIGNAL_APP_ID") return cachedId.trim();
+      } catch (e) {}
+      return "";
+    }
+
+    function initOneSignal(overrideAppId) {
+      if (overrideAppId && overrideAppId !== "YOUR_ONESIGNAL_APP_ID") {
+        try { localStorage.setItem("classradar_onesignal_app_id", overrideAppId.trim()); } catch (e) {}
+      }
+      const activeAppId = getActiveOneSignalAppId();
+      if (!activeAppId) {
+        console.log("[OneSignal] Standing by (Using built-in Service Worker Notification Engine).");
         return;
       }
+      if (oneSignalInitialized) return;
+      oneSignalInitialized = true;
 
       OneSignalDeferred.push(async function(OneSignal) {
         try {
           await OneSignal.init({
-            appId: ONESIGNAL_APP_ID,
+            appId: activeAppId,
             allowLocalhostAsSecureOrigin: true,
+            serviceWorkerPath: "sw.js",
+            serviceWorkerParam: { scope: "./" },
             notifyButton: {
               enable: false // Use ClassRadar native controls
             }
@@ -1243,7 +1299,7 @@
 
           // Check if already subscribed
           const isPushGranted = OneSignal.Notifications.permission;
-          if (isPushGranted) {
+          if (isPushGranted || Notification.permission === "granted") {
             updateNotifyStatus("Active");
           } else {
             // Automatically prompt with OneSignal slidedown on visit
@@ -1259,8 +1315,6 @@
             if (event.current.optedIn) {
               updateNotifyStatus("Active");
               syncOneSignalUserTags();
-            } else {
-              updateNotifyStatus("denied");
             }
           });
 
@@ -1273,18 +1327,21 @@
     }
 
     function syncOneSignalUserTags() {
-      if (window.OneSignalDeferred && ONESIGNAL_APP_ID && ONESIGNAL_APP_ID !== "YOUR_ONESIGNAL_APP_ID") {
+      const activeAppId = getActiveOneSignalAppId();
+      if (window.OneSignalDeferred && activeAppId) {
         OneSignalDeferred.push(async function(OneSignal) {
           try {
             const sec = getCurrentSection();
+            const shortCode = String(currentSectionId || "SEC_E").replace(/^SEC_/, "");
             await OneSignal.User.addTags({
               section: currentSectionId,
+              section_code: shortCode,
               section_name: sec ? (sec.shortName || sec.name) : currentSectionId,
               group: currentGroup,
               university: "ARKA_JAIN",
               department: "BTech_1st_Sem"
             });
-            console.log("[OneSignal] Synced tags:", { section: currentSectionId, group: currentGroup });
+            console.log("[OneSignal] Synced tags:", { section: currentSectionId, section_code: shortCode, group: currentGroup });
           } catch (e) {
             console.warn("[OneSignal] Tag sync note:", e);
           }
@@ -1320,23 +1377,32 @@
     }
 
     function requestNotificationPermission() {
-      // If OneSignal is configured, request via OneSignal SDK
-      if (window.OneSignalDeferred && ONESIGNAL_APP_ID && ONESIGNAL_APP_ID !== "YOUR_ONESIGNAL_APP_ID") {
+      const activeAppId = getActiveOneSignalAppId();
+      // Always request native Notification permission first from the direct user gesture
+      if ("Notification" in window) {
+        Notification.requestPermission().then((perm) => {
+          updateNotifyStatus(perm === "granted" ? "Active" : perm);
+          if (perm === "granted") {
+            const sec = getCurrentSection();
+            sendNotification(`🔔 Notifications Enabled (${sec.shortName || sec.name})`, {
+              body: "You will now receive live class reminders, holiday notices, and campus alerts!",
+              tag: "welcome-alert"
+            });
+          }
+        }).catch(() => {});
+      }
+
+      // Also opt-in to OneSignal Push if configured
+      if (window.OneSignalDeferred && activeAppId) {
         OneSignalDeferred.push(async function(OneSignal) {
           try {
             await OneSignal.Notifications.requestPermission();
-            const granted = OneSignal.Notifications.permission;
-            updateNotifyStatus(granted ? "Active" : "denied");
-            if (granted) {
-              syncOneSignalUserTags();
-              showToast("🔔 Push Notifications Active", "You'll receive mobile and desktop alerts for classes and notices.");
+            if (OneSignal.User && OneSignal.User.PushSubscription && OneSignal.User.PushSubscription.optIn) {
+              await OneSignal.User.PushSubscription.optIn();
             }
-          } catch (e) {
-            fallbackRequestPermission();
-          }
+            syncOneSignalUserTags();
+          } catch (e) {}
         });
-      } else {
-        fallbackRequestPermission();
       }
     }
 
@@ -1350,12 +1416,20 @@
     function updateNotifyStatus(status) {
       const el = document.getElementById("notify-status");
       if (!el) return;
-      if (status === "Active") {
+      if (status === "Active" || status === "granted") {
         el.textContent = "Active";
         el.style.color = "var(--accent-emerald)";
+        el.style.cursor = "default";
+        el.onclick = null;
+        const banner = document.getElementById("notif-permission-banner");
+        if (banner) banner.style.display = "none";
       } else if (status === "denied") {
-        el.textContent = "Blocked";
+        el.textContent = "Blocked (Unblock in Browser)";
         el.style.color = "var(--accent-rose)";
+        el.style.cursor = "pointer";
+        el.onclick = () => {
+          showToast("Permission Blocked", "Tap the 🔒 lock/tune icon in your browser address bar -> Permissions -> Allow Notifications.");
+        };
       } else {
         el.textContent = "Click to Enable";
         el.style.color = "var(--accent-amber)";
@@ -1370,11 +1444,16 @@
       showToast("Setting Saved", `Alerts set to ${leadTimeMinutes > 0 ? leadTimeMinutes + 'm before class' : 'at start'}.`);
     }
 
-    function testNotificationAlert() {
+    async function testNotificationAlert() {
       const sec = getCurrentSection();
-      sendNotification(`Class Alert (${sec.shortName || sec.name})`, {
-        body: `${sec.room} • Classes tracked in real-time.`,
-        tag: "test-alert"
+      if ("Notification" in window && Notification.permission === "denied") {
+        playChime();
+        showToast("⚠️ Browser Blocked Alerts", "Tap the 🔒 icon next to the URL -> Permissions -> Notifications -> Allow.");
+        return;
+      }
+      await sendNotification(`🔔 Class Alert (${sec.shortName || sec.name})`, {
+        body: `${sec.room} • Live class & holiday notifications are working!`,
+        tag: "test-alert-" + Date.now()
       });
     }
 
@@ -2484,57 +2563,89 @@
             const message = getRowField(r, "Message", "DisplayMessage", "col_3", "D");
             const targetSection = getRowField(r, "TargetSection", "AffectedSection", "col_4", "E") || "ALL";
             const categoryPriority = getRowField(r, "Priority_Or_Category", "Priority", "Category", "col_5", "F");
-            const disableReminders = getRowField(r, "DisableReminders", "col_6", "G") || "YES";
+            const rawDisable = getRowField(r, "DisableReminders", "col_6", "G");
 
-            if (type === "HOLIDAY" || disableReminders.toUpperCase() === "YES" || (!type && titleOrReason.toLowerCase().includes("holiday"))) {
+            // Support remote OneSignal App ID configuration directly from Control Panel sheet
+            if (type === "CONFIG" && titleOrReason.toUpperCase() === "ONESIGNAL_APP_ID" && message) {
+              initOneSignal(message.trim());
+              return;
+            }
+
+            if (!titleOrReason && !message) return;
+
+            const isHolidayRow = (
+              type === "HOLIDAY" ||
+              type === "OFF" ||
+              type === "EXAM" ||
+              (type !== "NOTICE" && type !== "ALERT" && rawDisable.toUpperCase() === "YES") ||
+              (!type && titleOrReason.toLowerCase().includes("holiday"))
+            );
+
+            const isActiveRow = (rawStatus.toLowerCase() === "active" || rawStatus.toUpperCase() === "YES");
+            const fingerprint = `${type || (isHolidayRow ? 'HOLIDAY' : 'NOTICE')}_${ normalizeDateStr(dateVal) || dateVal }_${titleOrReason}_${message}_${targetSection}_${isActiveRow ? 'ACTIVE' : 'INACTIVE'}`;
+
+            if (isHolidayRow) {
               holidays.push({
+                NoticeID: fingerprint,
                 Date: dateVal,
                 Reason: titleOrReason || "University Holiday",
                 Title_Or_Reason: titleOrReason || "University Holiday",
                 DisplayMessage: message || "All classes suspended for today.",
                 Message: message || "All classes suspended for today.",
                 AffectedSection: targetSection,
-                DisableReminders: disableReminders,
-                Status: rawStatus
-              });
-            } else if (type === "NOTICE" || (!type && titleOrReason)) {
-              notices.push({
-                NoticeID: r.NoticeID || `N_${idx}_${dateVal}`,
-                Date: dateVal,
-                Title: titleOrReason || "Campus Announcement",
-                Title_Or_Reason: titleOrReason || "Campus Announcement",
-                Message: message,
-                DisplayMessage: message,
-                TargetSection: targetSection,
-                Category: categoryPriority || "General",
-                Priority: (categoryPriority.toLowerCase() === "urgent" || categoryPriority.toLowerCase() === "high") ? "High" : "Normal",
+                DisableReminders: rawDisable || "YES",
                 Status: rawStatus,
-                IsActive: (rawStatus.toLowerCase() === "active") ? "YES" : "NO"
+                IsActive: isActiveRow ? "YES" : "NO"
               });
             }
+
+            // Include both notices AND active holiday announcements in the Notice Board & live alert stream
+            notices.push({
+              NoticeID: r.NoticeID || fingerprint,
+              Type: isHolidayRow ? "HOLIDAY" : "NOTICE",
+              Date: dateVal,
+              Title: titleOrReason || (isHolidayRow ? "University Holiday" : "Campus Announcement"),
+              Title_Or_Reason: titleOrReason || (isHolidayRow ? "University Holiday" : "Campus Announcement"),
+              Message: message || (isHolidayRow ? "All classes suspended." : ""),
+              DisplayMessage: message || (isHolidayRow ? "All classes suspended." : ""),
+              TargetSection: targetSection,
+              Category: categoryPriority || (isHolidayRow ? "Holiday" : "General"),
+              Priority: (categoryPriority.toLowerCase() === "urgent" || categoryPriority.toLowerCase() === "high" || isHolidayRow) ? "High" : "Normal",
+              Status: rawStatus,
+              IsActive: isActiveRow ? "YES" : "NO"
+            });
           });
 
-          if (holidays.length > 0) {
-            ACTIVE_OFFDAYS = holidays;
-            localStorage.setItem("classradar_cached_offdays", JSON.stringify(holidays));
-          }
+          ACTIVE_OFFDAYS = holidays;
+          localStorage.setItem("classradar_cached_offdays", JSON.stringify(holidays));
+
           if (notices.length > 0) {
-            // Detect if a new notice was published while the app was running
-            const seenIds = JSON.parse(localStorage.getItem("classradar_seen_notice_ids") || "[]");
-            const newNotices = notices.filter(n => n.IsActive === "YES" && !seenIds.includes(n.NoticeID));
-            
-            if (newNotices.length > 0 && seenIds.length > 0) {
-              const latest = newNotices[0];
-              showToast("📢 New Campus Notice!", latest.Title);
-              playChime();
-              sendNotification("📢 Campus Notice: " + latest.Title, {
-                body: latest.Message,
+            // Detect newly added or updated active notices/holidays for the current section
+            let seenIds = [];
+            try {
+              seenIds = JSON.parse(localStorage.getItem("classradar_seen_notice_ids") || "[]");
+            } catch (e) { seenIds = []; }
+
+            const shortSec = String(currentSectionId || "SEC_E").replace(/^SEC_/, "");
+            const activeForSection = notices.filter(n => {
+              if (n.IsActive !== "YES") return false;
+              const tSec = String(n.TargetSection || "ALL").trim().toUpperCase();
+              return tSec === "ALL" || tSec === currentSectionId || tSec === shortSec;
+            });
+
+            const unseenAlerts = activeForSection.filter(n => !seenIds.includes(n.NoticeID));
+
+            if (unseenAlerts.length > 0) {
+              const latest = unseenAlerts[unseenAlerts.length - 1];
+              const alertPrefix = latest.Type === "HOLIDAY" ? "🌴 Holiday Alert: " : "📢 Campus Notice: ";
+              sendNotification(alertPrefix + latest.Title, {
+                body: latest.Message || (latest.Date ? `Effective Date: ${latest.Date}` : "Check ClassRadar for details."),
                 tag: latest.NoticeID
               });
             }
 
-            // Update seen notice IDs
-            const allActiveIds = notices.filter(n => n.IsActive === "YES").map(n => n.NoticeID);
+            // Record all active IDs as seen so the same notice doesn't repeat on every poll
+            const allActiveIds = activeForSection.map(n => n.NoticeID);
             localStorage.setItem("classradar_seen_notice_ids", JSON.stringify(Array.from(new Set([...seenIds, ...allActiveIds]))));
 
             ACTIVE_NOTICES = notices;
@@ -2575,7 +2686,7 @@
       }
     }
 
-    const TIMETABLE_VERSION = "2026-10-20-ONESIGNAL-V15-STABLE";
+    const TIMETABLE_VERSION = "2026-10-24-NOTIF-ENGINE-V16-FIXED";
     const storedVersion = localStorage.getItem("classradar_timetable_version");
     if (storedVersion !== TIMETABLE_VERSION) {
       // Invalidate old cached timetable from previous routine
@@ -2624,7 +2735,7 @@
       // A. Auto-poll Google Sheets every 45 seconds silently in background
       setInterval(() => {
         syncAllFromGoogleSheets(false);
-      }, 45 * 1000);
+      }, 15 * 1000);
 
       // B. Auto-sync immediately when phone is unlocked or student returns to browser tab
       document.addEventListener("visibilitychange", () => {
@@ -2645,23 +2756,13 @@
         syncAllFromGoogleSheets(false);
       });
 
-      // E. Service Worker Auto-Update & Reload on GitHub Code Push
+      // E. Service Worker Registration for Notifications & Offline Support
       if ("serviceWorker" in navigator && (window.location.protocol === "http:" || window.location.protocol === "https:")) {
-        navigator.serviceWorker.register("sw.js").then(reg => {
-          // Periodically check GitHub for updated sw.js every 3 minutes
+        navigator.serviceWorker.register("./sw.js", { scope: "./" }).then(reg => {
           setInterval(() => {
             reg.update().catch(() => {});
           }, 3 * 60 * 1000);
         }).catch(() => {});
-
-        let refreshing = false;
-        navigator.serviceWorker.addEventListener("controllerchange", () => {
-          if (!refreshing) {
-            refreshing = true;
-            console.log("[ClassRadar] New app update deployed on GitHub. Auto-reloading...");
-            window.location.reload();
-          }
-        });
       }
     });
   </script>

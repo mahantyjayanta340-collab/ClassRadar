@@ -1,17 +1,17 @@
 /**
  * ==============================================================================
- * CLASSRADAR - ONESIGNAL GOOGLE SHEETS AUTOMATED PUSH NOTIFICATION ENGINE
+ * CLASSRADAR V16 - ONESIGNAL GOOGLE SHEETS AUTOMATED PUSH NOTIFICATION ENGINE
  * ==============================================================================
- * Connects your Google Sheets Master Database / Control Panel directly to
- * OneSignal REST API to deliver instant mobile and web push notifications
- * to students even when their phones are locked or browser tabs are closed.
+ * Connects your Google Sheets Control Panel directly to OneSignal API v2
+ * to deliver instant mobile and web push notifications to students even when
+ * their phones are locked or browser tabs are closed.
  */
 
 // ==========================================
 // 1. CONFIGURATION (REPLACE WITH YOUR KEYS)
 // ==========================================
 const ONESIGNAL_APP_ID = "YOUR_ONESIGNAL_APP_ID"; // From OneSignal: Settings > Keys & IDs
-const ONESIGNAL_REST_API_KEY = "YOUR_ONESIGNAL_REST_API_KEY"; // From OneSignal: Settings > Keys & IDs
+const ONESIGNAL_REST_API_KEY = "YOUR_ONESIGNAL_REST_API_KEY"; // From OneSignal: Settings > Keys & IDs (os_v2_app_...)
 const CLASSRADAR_URL = "https://your-username.github.io/ClassRadar/"; // Your deployed ClassRadar URL
 const CLASSRADAR_ICON = "https://your-username.github.io/ClassRadar/icon-192.png";
 
@@ -30,53 +30,91 @@ function onOpen() {
 }
 
 /**
- * Core OneSignal REST API Dispatcher
+ * Core OneSignal API v2 Dispatcher (Supports both os_v2_app_ keys and legacy keys)
  * @param {string} title Headline of the notification
  * @param {string} message Body text of the notification
- * @param {string} sectionFilter Optional: "E", "D", "A", or "ALL"
+ * @param {string} sectionFilter Optional: "E", "SEC_E", "D", "A", or "ALL"
  * @param {string} targetUrl Optional: URL to open when clicked
  */
 function sendOneSignalPush(title, message, sectionFilter = "ALL", targetUrl = CLASSRADAR_URL) {
-  if (!ONESIGNAL_APP_ID || ONESIGNAL_APP_ID === "YOUR_ONESIGNAL_APP_ID") {
-    throw new Error("Please set your ONESIGNAL_APP_ID and ONESIGNAL_REST_API_KEY in the script first!");
+  const cleanAppId = String(ONESIGNAL_APP_ID || "").trim();
+  const cleanApiKey = String(ONESIGNAL_REST_API_KEY || "").trim();
+
+  if (!cleanAppId || cleanAppId === "YOUR_ONESIGNAL_APP_ID" || !cleanApiKey || cleanApiKey === "YOUR_ONESIGNAL_REST_API_KEY") {
+    throw new Error("Please paste your ONESIGNAL_APP_ID and ONESIGNAL_REST_API_KEY at the top of the script first!");
   }
 
-  const endpoint = "https://onesignal.com/api/v1/notifications";
+  const endpoint = "https://api.onesignal.com/notifications";
 
-  const payload = {
-    app_id: ONESIGNAL_APP_ID,
-    headings: { en: title },
-    contents: { en: message },
-    url: targetUrl,
-    chrome_web_icon: CLASSRADAR_ICON,
-    chrome_web_badge: CLASSRADAR_ICON,
-    priority: 10 // High priority for instant delivery
+  // Normalize Authorization header for OneSignal v2 keys (os_v2_...) vs legacy keys
+  const authHeader = cleanApiKey.startsWith("os_v2_")
+    ? ("Key " + cleanApiKey)
+    : ("Basic " + cleanApiKey);
+
+  const basePayload = {
+    app_id: cleanAppId,
+    target_channel: "push",
+    headings: { en: String(title || "ClassRadar Alert") },
+    contents: { en: String(message || "New campus update available.") },
+    priority: 10
   };
 
-  // Target specific section or all students
-  if (sectionFilter && sectionFilter !== "ALL") {
-    payload.filters = [
-      { field: "tag", key: "section", relation: "=", value: String(sectionFilter).trim().toUpperCase() }
+  // Only attach URL/Icon if user replaced the placeholder URL
+  if (targetUrl && !targetUrl.includes("your-username.github.io")) {
+    basePayload.url = targetUrl;
+  }
+  if (CLASSRADAR_ICON && !CLASSRADAR_ICON.includes("your-username.github.io")) {
+    basePayload.chrome_web_icon = CLASSRADAR_ICON;
+    basePayload.chrome_web_badge = CLASSRADAR_ICON;
+  }
+
+  const cleanSec = String(sectionFilter || "ALL").trim().toUpperCase();
+
+  // Target specific section or all subscribed users
+  if (cleanSec && cleanSec !== "ALL" && cleanSec !== "ALL SECTIONS") {
+    const shortSec = cleanSec.replace(/^SEC_/, "").replace(/^SECTION\s*/, "").trim();
+    const fullSec = "SEC_" + shortSec;
+    basePayload.filters = [
+      { field: "tag", key: "section", relation: "=", value: fullSec },
+      { operator: "OR" },
+      { field: "tag", key: "section", relation: "=", value: shortSec },
+      { operator: "OR" },
+      { field: "tag", key: "section_code", relation: "=", value: shortSec }
     ];
   } else {
-    payload.included_segments = ["Subscribed Users"];
+    // Default segment in OneSignal v2 is "Total Subscriptions"
+    basePayload.included_segments = ["Total Subscriptions", "Subscribed Users"];
   }
 
   const options = {
     method: "post",
     contentType: "application/json",
     headers: {
-      Authorization: "Basic " + ONESIGNAL_REST_API_KEY
+      Authorization: authHeader,
+      Accept: "application/json"
     },
-    payload: JSON.stringify(payload),
+    payload: JSON.stringify(basePayload),
     muteHttpExceptions: true
   };
 
-  const response = UrlFetchApp.fetch(endpoint, options);
-  const responseCode = response.getResponseCode();
-  const responseBody = response.getContentText();
+  let response = UrlFetchApp.fetch(endpoint, options);
+  let responseCode = response.getResponseCode();
+  let responseBody = response.getContentText();
 
-  Logger.log("OneSignal Response: " + responseCode + " - " + responseBody);
+  Logger.log("OneSignal Primary Response (" + responseCode + "): " + responseBody);
+
+  // Fallback: if segment name mismatch occurs on custom OneSignal setup, use universal session filter
+  if ((responseCode >= 400 || responseBody.includes("Segment")) && basePayload.included_segments) {
+    delete basePayload.included_segments;
+    basePayload.filters = [
+      { field: "last_session", relation: ">", value: "0" }
+    ];
+    options.payload = JSON.stringify(basePayload);
+    response = UrlFetchApp.fetch(endpoint, options);
+    responseCode = response.getResponseCode();
+    responseBody = response.getContentText();
+    Logger.log("OneSignal Fallback Filter Response (" + responseCode + "): " + responseBody);
+  }
 
   if (responseCode >= 200 && responseCode < 300) {
     return JSON.parse(responseBody);
@@ -100,7 +138,7 @@ function menuBroadcastNotice() {
 
   try {
     const res = sendOneSignalPush(title, message, "ALL");
-    ui.alert("Success!", "Push notification sent to " + (res.recipients || "all") + " subscribed students.", ui.ButtonSet.OK);
+    ui.alert("Success!", "Push notification dispatched! ID: " + (res.id || "Sent"), ui.ButtonSet.OK);
   } catch (err) {
     ui.alert("Push Failed", err.message, ui.ButtonSet.OK);
   }
@@ -111,7 +149,7 @@ function menuBroadcastNotice() {
  */
 function menuSectionNotice() {
   const ui = SpreadsheetApp.getUi();
-  const secPrompt = ui.prompt("🎯 Section Alert", "Enter Target Section ID (e.g. E, D, A):", ui.ButtonSet.OK_CANCEL);
+  const secPrompt = ui.prompt("🎯 Section Alert", "Enter Target Section (e.g. E, D, A, FG):", ui.ButtonSet.OK_CANCEL);
   if (secPrompt.getSelectedButton() !== ui.Button.OK) return;
   const section = secPrompt.getResponseText();
 
@@ -136,16 +174,20 @@ function menuSectionNotice() {
  */
 function sendTestNotification() {
   try {
-    const res = sendOneSignalPush("🔔 ClassRadar Push Test", "Your mobile & web notification pipeline is working perfectly!", "ALL");
-    SpreadsheetApp.getUi().alert("Test Successful", "Test notification dispatched successfully.", SpreadsheetApp.getUi().ButtonSet.OK);
+    const res = sendOneSignalPush(
+      "🔔 ClassRadar Live Test",
+      "Your mobile & web push notification system is connected and working!",
+      "ALL"
+    );
+    SpreadsheetApp.getUi().alert("Test Successful!", "Notification dispatched (ID: " + (res.id || "OK") + "). Check your phone or browser!", SpreadsheetApp.getUi().ButtonSet.OK);
   } catch (err) {
     SpreadsheetApp.getUi().alert("Test Failed", err.message, SpreadsheetApp.getUi().ButtonSet.OK);
   }
 }
 
 /**
- * Automated Trigger: Fired when edits occur in Google Sheets
- * When you change status to 'Active', it automatically pushes to students!
+ * Automated Trigger: Fired when edits occur in your Control Panel Google Sheet.
+ * Works on Sheet1, Control_Panel, Notices, or any tab (except Timetable_Master).
  */
 function autoPushOnEdit(e) {
   if (!e || !e.range) return;
@@ -153,40 +195,77 @@ function autoPushOnEdit(e) {
   const sheet = e.source.getActiveSheet();
   const sheetName = sheet.getName().toLowerCase();
 
-  // Match sheets containing 'notice', 'control', or 'offday'
-  if (!sheetName.includes("notice") && !sheetName.includes("control") && !sheetName.includes("offday")) {
+  // Only skip if editing the 245-row Timetable_Master tab
+  if (sheetName.includes("timetable_master") || sheetName.includes("master_routine")) {
     return;
   }
 
   const row = e.range.getRow();
-  if (row <= 1) return; // Skip headers
+  if (row <= 1) return; // Skip header row
 
-  const rowValues = sheet.getRange(row, 1, 1, 10).getValues()[0];
-  
-  // Find Status, Title, and Message
-  // Example Row: [Type, Date, Section, Title_Or_Reason, Message, Status, ...]
-  let type = String(rowValues[0] || "");
-  let section = String(rowValues[2] || "ALL");
-  let title = String(rowValues[3] || "");
-  let message = String(rowValues[4] || "");
-  let status = String(rowValues[5] || "");
+  const lastCol = Math.max(sheet.getLastColumn(), 8);
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h || "").trim().toLowerCase().replace(/[^a-z0-9]/g, ""));
+  const rowValues = sheet.getRange(row, 1, 1, lastCol).getValues()[0];
 
-  // Fallback checks if columns are shifted
-  for (let i = 0; i < rowValues.length; i++) {
-    const val = String(rowValues[i]).trim();
-    if (val.toUpperCase() === "ACTIVE" || val.toUpperCase() === "YES") {
-      status = "ACTIVE";
+  function getCol(aliases, defaultIdx) {
+    for (let a of aliases) {
+      const cleanA = a.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const idx = headers.indexOf(cleanA);
+      if (idx !== -1 && rowValues[idx] !== undefined && String(rowValues[idx]).trim() !== "") {
+        return String(rowValues[idx]).trim();
+      }
+    }
+    if (defaultIdx !== undefined && rowValues[defaultIdx] !== undefined) {
+      return String(rowValues[defaultIdx]).trim();
+    }
+    return "";
+  }
+
+  // Standard Control Panel Columns:
+  // Col A (0): Type | Col B (1): Date | Col C (2): Title_Or_Reason | Col D (3): Message
+  // Col E (4): TargetSection | Col F (5): Priority_Or_Category | Col G (6): DisableReminders | Col H (7): Status
+  const type = getCol(["type"], 0).toUpperCase();
+  const dateVal = getCol(["date"], 1);
+  const title = getCol(["titleorreason", "title", "reason"], 2);
+  const message = getCol(["message", "displaymessage", "details"], 3);
+  const section = getCol(["targetsection", "affectedsection", "section"], 4) || "ALL";
+  let status = getCol(["status", "isactive"], 7);
+
+  // Also scan row if "Active" or "YES" was placed in another column
+  if (!status) {
+    for (let i = 0; i < rowValues.length; i++) {
+      const v = String(rowValues[i] || "").trim().toUpperCase();
+      if (v === "ACTIVE" || v === "INACTIVE") {
+        status = v;
+        break;
+      }
     }
   }
 
-  if (status.toUpperCase() === "ACTIVE" && title) {
-    const pushTitle = (type.toUpperCase() === "HOLIDAY" ? "🌴 Holiday Notice: " : "📢 Campus Alert: ") + title;
-    sendOneSignalPush(pushTitle, message || "Check your ClassRadar schedule for details.", section);
+  // Only push when the row has a Title and its Status is Active (or default active)
+  if (!title) return;
+  if (status && status.toUpperCase() !== "ACTIVE" && status.toUpperCase() !== "YES") return;
+
+  // Prevent duplicate pushes for the exact same unedited row content within 60 seconds
+  const cache = CacheService.getScriptCache();
+  const fingerprint = "push_" + row + "_" + type + "_" + title + "_" + message + "_" + section + "_" + status;
+  if (cache.get(fingerprint)) {
+    return;
   }
+  cache.put(fingerprint, "sent", 60);
+
+  const prefix = (type === "HOLIDAY" || type === "OFF")
+    ? "🌴 Holiday Notice: "
+    : (type === "EXAM" ? "📝 Exam Alert: " : "📢 Campus Notice: ");
+
+  const pushTitle = prefix + title;
+  const pushBody = message || (dateVal ? ("Scheduled for " + dateVal) : "Open ClassRadar for full details.");
+
+  sendOneSignalPush(pushTitle, pushBody, section);
 }
 
 /**
- * Installs persistent onChange / onEdit triggers with permissions
+ * Installs persistent onEdit trigger with full UrlFetchApp permissions
  */
 function installSheetTrigger() {
   const triggers = ScriptApp.getProjectTriggers();
@@ -201,5 +280,9 @@ function installSheetTrigger() {
     .onEdit()
     .create();
 
-  SpreadsheetApp.getUi().alert("Automated Trigger Installed", "Google Sheets will now automatically send OneSignal push notifications whenever an active notice or holiday row is edited.", SpreadsheetApp.getUi().ButtonSet.OK);
+  SpreadsheetApp.getUi().alert(
+    "✅ Automated Trigger Active!",
+    "Your Control Panel sheet is now linked to OneSignal. Whenever you add or edit an Active row (Holiday or Notice), a push notification will automatically be sent to students!",
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
 }
